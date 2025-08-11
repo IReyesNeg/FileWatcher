@@ -1,14 +1,17 @@
+#region Using Statements
 using System.Drawing.Imaging;
 using MailKit.Net.Smtp;
 using MimeKit;
 using System.Diagnostics;
 using SHDocVw;
 using Microsoft.Data.SqlClient;
+#endregion
 
 namespace FileWatcher
 {
     public class Worker : BackgroundService // Es una clase que se esta heredando de .NET
     {
+        #region Variables
         private readonly ILogger<Worker> _logger; // Estamos creando la variable local
         private readonly string folderPath = @"C:\Users\Ian\Documents\Visual Studio 2022\FW_Test"; // Path for folder
 
@@ -20,7 +23,9 @@ namespace FileWatcher
 
         private readonly string _connectionString;
         private DateTime lastCheck = DateTime.MinValue;
+        #endregion
 
+        #region Constructor
 
         public Worker(ILogger<Worker> logger, IConfiguration config)
         {
@@ -28,6 +33,10 @@ namespace FileWatcher
             _connectionString = config.GetConnectionString("FileWatcherDB");
         }
 
+        #endregion
+
+        #region Protected Overridable Methods
+        
         protected override async Task ExecuteAsync(CancellationToken stoppingToken) // Signature del metodo //Los tres reyes magos con await
         {
             _logger.LogInformation("FileWatcher started at: {time}", DateTimeOffset.Now); // feedback user
@@ -73,6 +82,10 @@ namespace FileWatcher
             _logger.LogInformation("FileWatcher stopping at: {time}", DateTimeOffset.Now);
         }
 
+        #endregion
+
+        #region Private Methods
+
         private async Task OpenOrReuseExplorerAsync(string folderPath)
         {
             folderPath = Path.GetFullPath(folderPath).TrimEnd('\\');
@@ -98,7 +111,6 @@ namespace FileWatcher
             Process.Start("explorer.exe", folderPath);
             await Task.Delay(2000);
         }
-
 
         private async Task<string> TakeFolderScreenshotAsync()
         {
@@ -147,6 +159,7 @@ namespace FileWatcher
 
             _logger.LogInformation("Email sent to {recipient}", emailRecipient);
         }
+        
         private async Task LogEmailSentAsync(string fileName, string recipient, int filesDetected)
         {
             try
@@ -174,5 +187,7 @@ namespace FileWatcher
             }
 
         }
+
+        #endregion
     }
 }
