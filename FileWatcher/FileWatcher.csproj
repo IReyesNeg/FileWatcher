@@ -10,13 +10,31 @@
   </PropertyGroup>
 
   <ItemGroup>
-    
-    
-    
     <PackageReference Include="MailKit" Version="4.13.0" />
-    <PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.1" />
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="6.0.2" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="9.0.8" />
     <PackageReference Include="MimeKit" Version="4.13.0" />
-    <PackageReference Include="System.Drawing.Common" Version="9.0.7" />
+    <PackageReference Include="System.Drawing.Common" Version="9.0.8" />
+
+    <COMReference Include="ShellWindows">
+      <Guid>{9BA05972-F6A8-11CF-A442-00A0C90A8F39}</Guid>
+      <VersionMajor>1</VersionMajor>
+      <VersionMinor>1</VersionMinor>
+      <Lcid>0</Lcid>
+      <WrapperTool>tlbimp</WrapperTool>
+      <Isolated>false</Isolated>
+    </COMReference>
+
+    <COMReference Include="SHDocVw">
+      <WrapperTool>tlbimp</WrapperTool>
+      <VersionMinor>1</VersionMinor>
+      <VersionMajor>1</VersionMajor>
+      <Guid>eab22ac0-30c1-11cf-a7eb-0000c05bae0b</Guid>
+      <Lcid>0</Lcid>
+      <Isolated>false</Isolated>
+      <EmbedInteropTypes>true</EmbedInteropTypes>
+    </COMReference>
+    
   </ItemGroup>
 </Project>
 

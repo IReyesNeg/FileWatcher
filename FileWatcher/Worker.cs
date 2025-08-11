@@ -1,8 +1,9 @@
-using System.Drawing;
 using System.Drawing.Imaging;
 using MailKit.Net.Smtp;
 using MimeKit;
 using System.Diagnostics;
+using SHDocVw;
+using Microsoft.Data.SqlClient;
 
 namespace FileWatcher
 {
@@ -10,26 +11,27 @@ namespace FileWatcher
     {
         private readonly ILogger<Worker> _logger; // Estamos creando la variable local
         private readonly string folderPath = @"C:\Users\Ian\Documents\Visual Studio 2022\FW_Test"; // Path for folder
+
         private readonly string emailRecipient = "naiseyer@gmail.com"; // Email that receives the confirmation
         private readonly string emailSender = "naiseyer@gmail.com"; // Email that sends the file ** MUST ADD DI\
         private readonly string emailPassword = "groqirgtjwwwdgko"; // Secure with Gmail 2step Auth
         private readonly string smtpServer = "smtp.gmail.com"; // Verify provider
         private readonly int smtpPort = 587; // PORT VERIFY PORT
 
+        private readonly string _connectionString;
         private DateTime lastCheck = DateTime.MinValue;
 
 
-        public Worker(ILogger<Worker> logger)
+        public Worker(ILogger<Worker> logger, IConfiguration config)
         {
             _logger = logger; //variable local siendo instanciada por la variable del DI creando el objeto para ser utilizado a nivel global
+            _connectionString = config.GetConnectionString("FileWatcherDB");
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken) // Signature del metodo //Los tres reyes magos con await
         {
-            if (_logger.IsEnabled(LogLevel.Information))
-            {
-                _logger.LogInformation("FileWatcher running."); // feedback user
-            }
+            _logger.LogInformation("FileWatcher started at: {time}", DateTimeOffset.Now); // feedback user
+
 
             while (!stoppingToken.IsCancellationRequested) // WHILE LOOP TO VERIFY EVERY 10 SECONDS FOR NEW FILES
             {
@@ -42,11 +44,20 @@ namespace FileWatcher
 
                     if (newFiles.Any())
                     {
+                        _logger.LogInformation("{count} new file(s) detected.", newFiles.Count);
+
+                        await OpenOrReuseExplorerAsync(folderPath);
+
+
                         string screenshotPath = await TakeFolderScreenshotAsync();
+                        _logger.LogInformation("Screenshot saved to: {path}", screenshotPath);
 
                         await SendEmailWithScreenshot(screenshotPath);
 
+                        await LogEmailSentAsync(screenshotPath, emailRecipient, newFiles.Count);
+
                         File.Delete(screenshotPath); // cleans up path
+                        _logger.LogInformation("Temporary screenshot deleted.");
                     }
 
                     lastCheck = DateTime.Now;
@@ -59,20 +70,40 @@ namespace FileWatcher
                 await Task.Delay(TimeSpan.FromSeconds(10), stoppingToken);
 
             }
+            _logger.LogInformation("FileWatcher stopping at: {time}", DateTimeOffset.Now);
+        }
+
+        private async Task OpenOrReuseExplorerAsync(string folderPath)
+        {
+            folderPath = Path.GetFullPath(folderPath).TrimEnd('\\');
+            ShellWindows shellWindows = new ShellWindows();
+
+            foreach (InternetExplorer window in shellWindows)
+            {
+                string location = window.LocationURL.Replace("file:///", "").Replace("/", "\\");
+                location = Uri.UnescapeDataString(location).TrimEnd('\\');
+
+                if (string.Equals(location, folderPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    _logger.LogInformation("Explorer window already open for {folder}, bringing to front.", folderPath);
+                    window.Visible = true;
+                    window.FullScreen = false;
+                    window.Left = 0;
+                    window.Top = 0;
+                    return;
+                }
+            }
+
+            _logger.LogInformation("Opening new Explorer window for {folder}", folderPath);
+            Process.Start("explorer.exe", folderPath);
+            await Task.Delay(2000);
         }
 
 
-        private async Task<string> TakeFolderScreenshotAsync() // FUNCTION TO TAKE SCREENSHOT
+        private async Task<string> TakeFolderScreenshotAsync()
         {
-            _logger.LogInformation("Taking Screenshot...");
-
-            Process.Start("explorer.exe", folderPath); // OPENS FILE EXPLORER
-
-            await Task.Delay(3000);
-
+            _logger.LogInformation("Taking screenshot...");
             string fileName = Path.Combine(Path.GetTempPath(), $"screenshot_{Guid.NewGuid()}.png");
-
-            _logger.LogInformation("This will be the file name " + fileName);
 
             var screenBounds = Screen.PrimaryScreen.Bounds;
 
@@ -86,7 +117,7 @@ namespace FileWatcher
             }
 
             return fileName;
-    }
+        }
 
         private async Task SendEmailWithScreenshot(string screenshotPath) // FUNCTION TO SEND EMAIL VIA GMAIL SERVICE
         {
@@ -95,7 +126,7 @@ namespace FileWatcher
             var message = new MimeMessage();
             message.From.Add(MailboxAddress.Parse(emailSender));
             message.To.Add(MailboxAddress.Parse(emailRecipient));
-                message.Subject = $"New file detected in folder at {DateTime.Now}";
+            message.Subject = $"New file detected in folder at {DateTime.Now}";
 
             var builder = new BodyBuilder
             {
@@ -110,12 +141,38 @@ namespace FileWatcher
             client.ServerCertificateValidationCallback = (s, c, h, e) => true;
 
             await client.ConnectAsync(smtpServer, smtpPort, MailKit.Security.SecureSocketOptions.StartTls); // MailKit.Security.SecureSocketOptions.StartTls); <== ensures a secure connection.
-            await client.AuthenticateAsync(emailSender, emailPassword); 
+            await client.AuthenticateAsync(emailSender, emailPassword);
             await client.SendAsync(message);
             await client.DisconnectAsync(true);
 
-            _logger.LogInformation("Email sent...");
+            _logger.LogInformation("Email sent to {recipient}", emailRecipient);
         }
+        private async Task LogEmailSentAsync(string fileName, string recipient, int filesDetected)
+        {
+            try
+            {
+                using var conn = new SqlConnection(_connectionString);
+                await conn.OpenAsync();
 
+                string sql = @"
+                    INSERT INTO EmailLog (FileName, RecipientEmail, FilesDetectedCount, FolderPath)
+                    VALUES (@FileName, @RecipientEmail, @FilesDetectedCount, @FolderPath);";
+
+                using var cmd = new SqlCommand(sql, conn);
+                cmd.Parameters.AddWithValue("@FileName", Path.GetFileName(fileName));
+                cmd.Parameters.AddWithValue("@RecipientEmail", recipient);
+                cmd.Parameters.AddWithValue("@FilesDetectedCount", filesDetected);
+                cmd.Parameters.AddWithValue("@FolderPath", folderPath);
+
+                await cmd.ExecuteNonQueryAsync();
+
+                _logger.LogInformation("Email log saved to database for file: {file}", fileName);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error saving email log to database.");
+            }
+
+        }
     }
 }
