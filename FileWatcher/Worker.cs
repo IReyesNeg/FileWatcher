@@ -30,7 +30,7 @@ namespace FileWatcher
         public Worker(ILogger<Worker> logger, IConfiguration config)
         {
             _logger = logger; //variable local siendo instanciada por la variable del DI creando el objeto para ser utilizado a nivel global
-            _connectionString = config.GetConnectionString("FileWatcherDB");
+            _connectionString = config.GetConnectionString("DefaultConnection");
         }
 
         #endregion
